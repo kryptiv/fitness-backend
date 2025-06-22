@@ -18,7 +18,7 @@ origins = [
     # "http://localhost:4200",  # Allow your local Angular dev server
     # "https://your-deployed-angular-app.azurestaticapps.net", # Example for deployed Angular app
     # "https://your-frontend-container-app.azurecontainerapps.io" # If hosted directly in ACA
-    "https://fitness-backend-api.ashyflower-5c5b2fa1.westus3.azurecontainerapps.io/"
+    "https://kind-rock-082362f1e.6.azurestaticapps.net"
 ]
 
 app.add_middleware(

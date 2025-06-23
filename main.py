@@ -107,7 +107,7 @@ async def generate_workout(data: FormData):
         # Send the request to the Ollama server
         # We're using 'llama2' as an example model. You can change this later.
         # Make sure you have downloaded the model using `ollama pull llama2`
-        response_ai = ollama_client.generate(model='llama2:7b-chat-q4_K_M', prompt=full_prompt, stream=False)
+        response_ai = ollama_client.generate(model='phi3:mini', prompt=full_prompt, stream=False)
 
         # The actual content is usually in response_ai['response']
         ai_text_response = response_ai['response']

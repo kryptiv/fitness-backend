@@ -15,7 +15,8 @@ app = FastAPI()
 # IMPORTANT: This will connect to Ollama running locally by default (http://localhost:11434).
 # When deployed to Azure, you would need to run Ollama in another container
 # and set this host to its internal URL (e.g., 'http://ollama-service-name:11434')
-ollama_client = ollama.Client() # This line was missing or misplaced
+OLLAMA_HOST = "https://ollama-service.internal.ashyflower-5c5b2fa1.westus3.azurecontainerapps.io"
+ollama_client = ollama.Client(host=OLLAMA_HOST)
 
 # --- CORS Configuration ---
 origins = [

@@ -38,14 +38,14 @@ class WorkoutRequest(BaseModel):
 
 # Ollama client initialization
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama-service.default.svc.cluster.local:11434")
-ollama_client = ollama.Client(host=OLLAMA_HOST)
+ollama_client = ollama.Client(host=OLLAMA_HOST, timeout=120.0)
 
 app = FastAPI()
 
 # CORS configuration
 origins = [
     "http://localhost:4200", # For local Angular development
-    "https://kind-rock-082362f1e.6.azurestaticapps.net/" # Your Azure Static Web App URL
+    "https://kind-rock-082362f1e.6.azurestaticapps.net" # Your Azure Static Web App URL
 ]
 
 app.add_middleware(

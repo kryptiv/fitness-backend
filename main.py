@@ -1,16 +1,43 @@
 import json
-import re # Import the regular expression module
-from typing import List, Optional
+import re
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, ValidationError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import ollama
 import os
 
-# ... (Your existing Pydantic models: Exercise, WorkoutDay, WorkoutPlan) ...
+# --- Pydantic Models (MUST be defined BEFORE they are used) ---
+class Exercise(BaseModel):
+    exercise: str
+    reps_or_time: str
+    sets: Optional[int] = None # Added Optional for main exercises
+
+class WorkoutDay(BaseModel):
+    day: str
+    focus: str
+    exercises: List[Exercise]
+
+class WorkoutPlan(BaseModel):
+    title: str
+    description: str
+    warmup: List[Exercise]
+    wod: List[WorkoutDay] # Workout of the Day (main workout)
+    cooldown: List[Exercise]
+
+# NEW: Pydantic model for the incoming request payload from the frontend
+class WorkoutRequest(BaseModel):
+    age: int
+    time: int # In minutes
+    equipment: Dict[str, bool] # e.g., {"dumbbells": true, "resistanceBands": false}
+    goal: str # e.g., "strengthNoBulk"
+    workoutType: str # e.g., "fullBody"
+    adhdMode: bool # e.g., true/false
+# --- End Pydantic Models ---
+
 
 # Ollama client initialization
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama-service.default.svc.cluster.local:8080")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama-service.default.svc.cluster.local:11434")
 ollama_client = ollama.Client(host=OLLAMA_HOST)
 
 app = FastAPI()
@@ -18,7 +45,7 @@ app = FastAPI()
 # CORS configuration
 origins = [
     "http://localhost:4200", # For local Angular development
-    "https://kind-rock-082362f1e.6.azurestaticapps.net" # Your Azure Static Web App URL
+    "https://kind-rock-082362f1e.6.azurestaticapps.net/" # Your Azure Static Web App URL
 ]
 
 app.add_middleware(
@@ -69,7 +96,6 @@ def parse_workout_plan(ai_response: str) -> WorkoutPlan:
         final_data = raw_data
         print(f"No 'workout' key found, using raw data as final_data.")
 
-
     # Step 4: Validate with Pydantic
     try:
         workout_plan = WorkoutPlan(**final_data)
@@ -81,12 +107,20 @@ def parse_workout_plan(ai_response: str) -> WorkoutPlan:
 
 
 @app.post("/generate-workout")
-async def generate_workout(request: Request):
+async def generate_workout(request_data: WorkoutRequest): # Changed from 'request: Request'
     try:
-        data = await request.json()
-        user_preference = data.get("userPreference")
-        if not user_preference:
-            raise HTTPException(status_code=400, detail="User preference is required.")
+        # Construct the user_preference string from the incoming WorkoutRequest object
+        equipment_list = [eq for eq, has in request_data.equipment.items() if has]
+        equipment_str = ", ".join(equipment_list) if equipment_list else "no specific equipment"
+
+        user_preference = f"Age: {request_data.age}, " \
+                          f"Available Time: {request_data.time} minutes, " \
+                          f"Equipment: {equipment_str}, " \
+                          f"Goal: {request_data.goal}, " \
+                          f"Workout Type: {request_data.workoutType}, " \
+                          f"ADHD Mode: {'Yes' if request_data.adhdMode else 'No'}"
+
+        # No need for the 'if not user_preference:' check anymore as Pydantic handles validation
 
         full_prompt = f"""
         You are an AI assistant specialized in creating workout plans.
@@ -103,7 +137,7 @@ async def generate_workout(request: Request):
                     "day": "Day of the week (e.g., Monday)",
                     "focus": "Focus of the day (e.g., Upper Body)",
                     "exercises": [
-                        {{"exercise": "Exercise Name", "sets": "Number of sets", "reps": "Reps/Time/Distance"}},
+                        {{"exercise": "Exercise Name", "sets": "Number of sets (e.g., 3)", "reps": "Reps/Time/Distance (e.g., '8-12 reps' or '60 seconds')"}},
                         // ... more exercises for the day
                     ]
                 }}
@@ -127,8 +161,12 @@ async def generate_workout(request: Request):
         print(f"INFO:main:Parsed workout plan: {workout_plan_obj.dict()}")
         return {"message": "Workout plan generated successfully!", "workout_plan": workout_plan_obj.dict()}
 
+    except ValidationError as e:
+        # Pydantic validation error for the incoming request_data
+        print(f"ERROR:main:Incoming request data validation error: {e.errors()}")
+        raise HTTPException(status_code=422, detail=f"Invalid input data: {e.errors()}")
     except ValueError as e:
-        # Catch parsing/validation errors from parse_workout_plan
+        # Catch parsing/validation errors from parse_workout_plan (AI response parsing)
         raise HTTPException(status_code=500, detail=f"Failed to parse AI workout plan: {e}")
     except Exception as e:
         # Catch any other unexpected errors

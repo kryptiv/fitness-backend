@@ -38,22 +38,26 @@ class WorkoutRequest(BaseModel):
 
 # Ollama client initialization
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama-service.default.svc.cluster.local:11434")
-ollama_client = ollama.Client(host=OLLAMA_HOST, timeout=120.0)
+
+# IMPORTANT: Increased timeout for Ollama client
+# TinyLlama is smaller, but initial cold starts or complex prompts might still take time.
+# Set to 180 seconds (3 minutes) to be safe. You can reduce this later if stable.
+ollama_client = ollama.Client(host=OLLAMA_HOST, timeout=180.0)
 
 app = FastAPI()
 
 # CORS configuration
 origins = [
     "http://localhost:4200", # For local Angular development
-    "https://kind-rock-082362f1e.6.azurestaticapps.net" # Your Azure Static Web App URL
+    "https://kind-rock-082362f1e.6.azurestaticapps.net" # Your Azure Static Web App URL (removed trailing slash for consistency)
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"], # Allows all HTTP methods (POST, GET, OPTIONS, etc.)
+    allow_headers=["*"], # Allows all headers
 )
 
 def parse_workout_plan(ai_response: str) -> WorkoutPlan:
@@ -107,20 +111,23 @@ def parse_workout_plan(ai_response: str) -> WorkoutPlan:
 
 
 @app.post("/generate-workout")
-async def generate_workout(request_data: WorkoutRequest): # Changed from 'request: Request'
+async def generate_workout(request_data: WorkoutRequest):
     try:
         # Construct the user_preference string from the incoming WorkoutRequest object
         equipment_list = [eq for eq, has in request_data.equipment.items() if has]
         equipment_str = ", ".join(equipment_list) if equipment_list else "no specific equipment"
 
-        user_preference = f"Age: {request_data.age}, " \
-                          f"Available Time: {request_data.time} minutes, " \
-                          f"Equipment: {equipment_str}, " \
-                          f"Goal: {request_data.goal}, " \
-                          f"Workout Type: {request_data.workoutType}, " \
-                          f"ADHD Mode: {'Yes' if request_data.adhdMode else 'No'}"
+        # Combine all user preferences into a single, clear string for the TinyLlama model
+        user_preference = (
+            f"Age: {request_data.age}, "
+            f"Available Time: {request_data.time} minutes, "
+            f"Equipment: {equipment_str}, "
+            f"Goal: {request_data.goal}, "
+            f"Workout Type: {request_data.workoutType}, "
+            f"ADHD Mode: {'Yes' if request_data.adhdMode else 'No'}."
+        )
 
-        # No need for the 'if not user_preference:' check anymore as Pydantic handles validation
+        # No need for the 'if not user_preference:' check anymore as Pydantic handles validation of WorkoutRequest.
 
         full_prompt = f"""
         You are an AI assistant specialized in creating workout plans.
@@ -151,8 +158,8 @@ async def generate_workout(request_data: WorkoutRequest): # Changed from 'reques
         User preferences: {user_preference}
         """
 
-        # The model is phi3:mini
-        response_ai = ollama_client.generate(model='phi3:mini', prompt=full_prompt, stream=False)
+        # --- IMPORTANT CHANGE HERE: Model is now 'tinyllama' ---
+        response_ai = ollama_client.generate(model='tinyllama', prompt=full_prompt, stream=False)
 
         # Log the raw AI response for debugging
         print(f"INFO:main:Raw AI response: {response_ai['response']}")
@@ -167,6 +174,7 @@ async def generate_workout(request_data: WorkoutRequest): # Changed from 'reques
         raise HTTPException(status_code=422, detail=f"Invalid input data: {e.errors()}")
     except ValueError as e:
         # Catch parsing/validation errors from parse_workout_plan (AI response parsing)
+        print(f"ERROR:main:Failed to parse AI workout plan: {e}") # Added more specific error logging
         raise HTTPException(status_code=500, detail=f"Failed to parse AI workout plan: {e}")
     except Exception as e:
         # Catch any other unexpected errors
